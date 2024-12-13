@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Baixador de Vídeos do YouTube</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        form {
+            margin-top: 20px;
+        }
+        input, select, button {
+            padding: 10px;
+            margin: 10px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .progress-bar {
+            width: 50%;
+            height: 30px;
+            background-color: #f3f3f3;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: 20px auto;
+            position: relative;
+        }
+        .progress-bar-inner {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0;
+            border-radius: 5px;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Baixador de Vídeos do YouTube</h1>
+    <form action="/download" method="post" id="downloadForm">
+        <label for="url">URL do Vídeo:</label>
+        <input type="text" id="url" name="url" required><br>
+        <label for="format">Formato:</label>
+        <select id="format" name="format">
+            <option value="audio">Áudio (MP3)</option>
+            <option value="video">Vídeo (MP4)</option>
+        </select><br>
+        <label for="quality">Qualidade:</label>
+        <select id="quality" name="quality" disabled>
+            <option value="">Selecione um formato</option>
+        </select><br>
+        <button type="submit">Baixar</button>
+    </form>
+
+    <div class="progress-bar" id="progressBar">
+        <div class="progress-bar-inner" id="progressBarInner">0%</div>
+    </div>
+    <p id="status">Status: Aguardando</p>
+
+    <script>
+        const formatSelect = document.getElementById("format");
+        const qualitySelect = document.getElementById("quality");
+        const urlInput = document.getElementById("url");
+
+        formatSelect.addEventListener("change", () => {
+            if (formatSelect.value === "audio") {
+                qualitySelect.disabled = true;
+                qualitySelect.innerHTML = "<option value=''>Melhor qualidade (áudio)</option>";
+            } else {
+                qualitySelect.disabled = false;
+                fetchQualities();
+            }
+        });
+
+        urlInput.addEventListener("input", fetchQualities);
+
+        function fetchQualities() {
+            if (formatSelect.value === "video" && urlInput.value) {
+                fetch("/get_qualities", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ url: urlInput.value })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.qualities) {
+                        qualitySelect.innerHTML = data.qualities.map(q => 
+                            `<option value="${q.format_id}">${q.resolution}</option>`
+                        ).join("");
+                    } else {
+                        qualitySelect.innerHTML = "<option value=''>Erro ao carregar qualidades</option>";
+                    }
+                })
+                .catch(() => {
+                    qualitySelect.innerHTML = "<option value=''>Erro ao buscar qualidades</option>";
+                });
+            }
+        }
+
+        const form = document.getElementById("downloadForm");
+        const progressBar = document.getElementById("progressBarInner");
+        const status = document.getElementById("status");
+
+        form.addEventListener("submit", (e) => {
+            e.preventDefault();
+
+            // Atualiza o progresso em tempo real
+            const interval = setInterval(() => {
+                fetch("/progress")
+                    .then(response => response.json())
+                    .then(data => {
+                        progressBar.style.width = data.percent;
+                        progressBar.textContent = data.percent;
+                        status.textContent = `Status: ${data.percent} | Velocidade: ${data.speed} | ETA: ${data.eta}`;
+                    });
+            }, 1000);
+
+            // Envia o formulário para download
+            fetch(form.action, {
+                method: "POST",
+                body: new FormData(form),
+            })
+                .then(response => {
+                    if (response.ok) {
+                        clearInterval(interval);
+                        status.textContent = "Download concluído!";
+                        progressBar.style.width = "100%";
+                        progressBar.textContent = "100%";
+                        return response.blob();
+                    }
+                    throw new Error("Erro ao baixar");
+                })
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    a.download = "arquivo.mp4";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                })
+                .catch(error => {
+                    clearInterval(interval);
+                    status.textContent = `Erro: ${error.message}`;
+                });
+        });
+    </script>
+</body>
+</html>
